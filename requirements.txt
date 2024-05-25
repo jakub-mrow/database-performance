@@ -1,0 +1,5 @@
+Faker
+pandas
+psycopg2-binary
+SQLAlchemy
+matplotlib
