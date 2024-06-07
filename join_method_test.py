@@ -14,8 +14,7 @@ class JoinMethodTest(PerformanceTest):
         self.num_employees = num_employees
         self.num_departments = num_departments
         self.queries = [
-            ("Inner Join using ON", "SELECT e.first_name, e.last_name, d.dept_name FROM employees e JOIN departments d ON e.department_id = d.dept_id")
-            # Add more queries as needed
+            ("Join using ON", "SELECT e.first_name, e.last_name, d.dept_name FROM employees e JOIN departments d ON e.department_id = d.dept_id")
         ]
 
     def generate_data(self):
@@ -45,19 +44,26 @@ class JoinMethodTest(PerformanceTest):
 
         return pd.DataFrame(employees), pd.DataFrame(departments)
 
-    def measure_execution(self, query):
+    def measure_execution(self, query, connection):
         execution_time = None
-        with self.engine.connect() as connection:
-            start_time = time.time()
-            connection.execute(text(query))
-            end_time = time.time()
-            execution_time = end_time - start_time
+        start_time = time.time()
+        connection.execute(text(query))
+        end_time = time.time()
+        execution_time = end_time - start_time
 
-            # Get the execution plan
-            plan = connection.execute(text(f"EXPLAIN ANALYZE {query}")).fetchall()
-        return execution_time, plan
+        # Get the execution plan
+        plan = connection.execute(text(f"EXPLAIN ANALYZE {query}")).fetchall()
+        return execution_time * 1000, plan
 
     def execute(self):
+        def parse_actual_time(plan):
+            for index, line in enumerate(plan):
+                if index == 0:
+                    parts = line[0].split('actual time=')
+                    time_part = parts[1].split('..')[1]
+                    value = float(time_part.split()[0])
+                    return value
+
         employees_df, departments_df = self.generate_data()
         employees_df.to_sql('employees', self.engine, if_exists='replace', index=False)
         departments_df.to_sql('departments', self.engine, if_exists='replace', index=False)
@@ -65,31 +71,35 @@ class JoinMethodTest(PerformanceTest):
         join_methods = ["nestloop", "hashjoin", "mergejoin"]
         execution_results = []
 
-        for join_method in join_methods:
-            # Enable the specific join method and disable others
-            with self.engine.connect() as connection:
+        with self.engine.connect() as connection:
+
+            for join_method in join_methods:
+                # Enable the specific join method and disable others
                 connection.execute(text(f"SET enable_{join_method} = on;"))
                 for disabled_method in [m for m in join_methods if m != join_method]:
                     connection.execute(text(f"SET enable_{disabled_method} = off;"))
 
-            for name, query in self.queries:
-                exec_time, plan = self.measure_execution(query)
-                execution_results.append((name, exec_time, plan, join_method))
+                for name, query in self.queries:
+                    exec_time, plan = self.measure_execution(query, connection)
+                    actual_time = parse_actual_time(plan)
+                    execution_results.append((name, exec_time, plan, join_method, actual_time))
 
         # Reset all join methods
-        with self.engine.connect() as connection:
             for method in join_methods:
                 connection.execute(text(f"SET enable_{method} = on;"))
 
         # Print the plans
-        for name, exec_time, plan, join_method in execution_results:
+        for name, exec_time, plan, join_method, actual_time in execution_results:
+            print("--------------------------------------------------")
             print(f"Query: {name}")
-            print(f"Execution Time: {exec_time:.4f} seconds")
+            print(f"Execution Time: {exec_time:.4f} ms")
+            print(f"Actual Time: {actual_time:.4f} ms")
             print(f"Join Method: {join_method}")
+            print("--------------------------------------------------")
             print("Execution Plan:")
             for line in plan:
                 print(line[0])
-            print("\n")
+            print("--------------------------------------------------")
 
         query_names = [result[0] for result in execution_results]
         execution_times = [result[1] for result in execution_results]
