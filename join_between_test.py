@@ -8,15 +8,13 @@ from performance_test import PerformanceTest
 from faker import Faker
 
 
-class JoinMethodTest(PerformanceTest):
+class JoinBetweenTest(PerformanceTest):
     def __init__(self, db_url: str, num_employees: int, num_departments: int):
         self.engine = create_engine(db_url)
         self.num_employees = num_employees
         self.num_departments = num_departments
         self.queries = [
-            ("Join using ON", "SELECT * FROM employees e JOIN departments d ON e.department_id = d.dept_id")
-            # ("Join using LIKE", "SELECT * FROM employees e JOIN departments d ON e.department_id::TEXT LIKE d.dept_id::TEXT || '%'"),  # Adjusted to use the existing columns
-            # ("Join using BETWEEN", "SELECT * FROM employees e JOIN departments d ON e.department_id BETWEEN d.dept_id AND d.dept_id + 10")
+            ("Join using BETWEEN", "SELECT * FROM employees e JOIN departments d ON e.department_id BETWEEN d.dept_id AND d.dept_id + 10")
         ]
 
     def generate_data(self):
@@ -110,7 +108,7 @@ class JoinMethodTest(PerformanceTest):
 
         self.purge_tables()
 
-        self.plot_results(execution_times, query_names, f"Join Method Test ({self.num_employees})", join_methods, explained_times)
+        self.plot_results(execution_times, query_names, f"Join Between Test ({self.num_employees})", join_methods, explained_times)
     
     def plot_results(self, execution_times: list, query_names: list, title: str, join_methods: list, actual_times: list):
         # Set up the figure

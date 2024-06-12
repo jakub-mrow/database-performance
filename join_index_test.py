@@ -8,15 +8,13 @@ from performance_test import PerformanceTest
 from faker import Faker
 
 
-class JoinMethodTest(PerformanceTest):
+class JoinIndexTest(PerformanceTest):
     def __init__(self, db_url: str, num_employees: int, num_departments: int):
         self.engine = create_engine(db_url)
         self.num_employees = num_employees
         self.num_departments = num_departments
         self.queries = [
             ("Join using ON", "SELECT * FROM employees e JOIN departments d ON e.department_id = d.dept_id")
-            # ("Join using LIKE", "SELECT * FROM employees e JOIN departments d ON e.department_id::TEXT LIKE d.dept_id::TEXT || '%'"),  # Adjusted to use the existing columns
-            # ("Join using BETWEEN", "SELECT * FROM employees e JOIN departments d ON e.department_id BETWEEN d.dept_id AND d.dept_id + 10")
         ]
 
     def generate_data(self):
@@ -46,8 +44,17 @@ class JoinMethodTest(PerformanceTest):
 
         return pd.DataFrame(employees), pd.DataFrame(departments)
 
+    def create_indexes(self, connection):
+        connection.execute(text("CREATE INDEX idx_employees_department_id ON employees(department_id);"))
+        connection.execute(text("CREATE INDEX idx_departments_dept_id ON departments(dept_id);"))
+        connection.execute(text("CREATE INDEX idx_departments_name ON departments(dept_name);"))
+
+    def drop_indexes(self, connection):
+        connection.execute(text("DROP INDEX IF EXISTS idx_employees_department_id;"))
+        connection.execute(text("DROP INDEX IF EXISTS idx_departments_dept_id;"))
+        connection.execute(text("DROP INDEX IF EXISTS idx_departments_name;"))
+
     def measure_execution(self, query, connection):
-        execution_time = None
         start_time = time.time()
         connection.execute(text(query))
         end_time = time.time()
@@ -74,9 +81,8 @@ class JoinMethodTest(PerformanceTest):
         execution_results = []
 
         with self.engine.connect() as connection:
-
+            # Run queries without indexes
             for join_method in join_methods:
-                # Enable the specific join method and disable others
                 connection.execute(text(f"SET enable_{join_method} = on;"))
                 for disabled_method in [m for m in join_methods if m != join_method]:
                     connection.execute(text(f"SET enable_{disabled_method} = off;"))
@@ -84,9 +90,25 @@ class JoinMethodTest(PerformanceTest):
                 for name, query in self.queries:
                     exec_time, plan = self.measure_execution(query, connection)
                     actual_time = parse_actual_time(plan)
-                    execution_results.append((f"{name} {join_method}", exec_time, plan, join_method, actual_time))
+                    execution_results.append((f"{name} {join_method} without index", exec_time, plan, join_method, actual_time))
 
-        # Reset all join methods
+            # Create indexes
+            
+            self.create_indexes(connection)
+            # Run queries with indexes
+            for join_method in join_methods:
+                connection.execute(text(f"SET enable_{join_method} = on;"))
+                for disabled_method in [m for m in join_methods if m != join_method]:
+                    connection.execute(text(f"SET enable_{disabled_method} = off;"))
+
+                for name, query in self.queries:
+                    exec_time, plan = self.measure_execution(query, connection)
+                    actual_time = parse_actual_time(plan)
+                    execution_results.append((f"{name} {join_method} with index", exec_time, plan, join_method, actual_time))
+
+            self.drop_indexes(connection)
+
+            # Reset all join methods
             for method in join_methods:
                 connection.execute(text(f"SET enable_{method} = on;"))
 
@@ -103,40 +125,44 @@ class JoinMethodTest(PerformanceTest):
                 print(line[0])
             print("--------------------------------------------------")
 
-        query_names = [result[0] for result in execution_results]
-        execution_times = [result[1] for result in execution_results]
-        explained_times = [result[4] for result in execution_results]
-        
+        # Separate execution times by join method and index presence
+        without_index_times = [(result[0], result[1]) for result in execution_results if 'without index' in result[0]]
+        with_index_times = [(result[0], result[1]) for result in execution_results if 'with index' in result[0]]
 
         self.purge_tables()
 
-        self.plot_results(execution_times, query_names, f"Join Method Test ({self.num_employees})", join_methods, explained_times)
+        self.plot_results(without_index_times, with_index_times)
+
+    def plot_results(self, without_index_times, with_index_times):
     
-    def plot_results(self, execution_times: list, query_names: list, title: str, join_methods: list, actual_times: list):
-        # Set up the figure
-        fig, ax = plt.subplots(figsize=(12, 8))
-        
-        # Create a bar width
-        width = 0.35  # width of the bars
-        x = np.arange(len(query_names))  # the label locations
-        
-        # Plot execution times and actual times side by side
-        bars1 = ax.bar(x - width/2, execution_times, width, label='Execution Time', color='blue')
-        bars2 = ax.bar(x + width/2, actual_times, width, label='Explain Time', color='lightgreen')
-        
-        # Set titles and labels
-        ax.set_xlabel('Query')
-        ax.set_ylabel('Time (ms)')
-        ax.set_title(title)
+        # Extracting the labels and times for plotting
+        labels = [result[0].replace(' without index', '') for result in without_index_times]
+        without_index_values = [result[1] for result in without_index_times]
+        with_index_values = [result[1] for result in with_index_times]
+
+        # Setting up positions for bars
+        x = np.arange(len(labels))
+        width = 0.35
+
+        # Plotting the bars
+        fig, ax = plt.subplots()
+        bars1 = ax.bar(x - width/2, without_index_values, width, label='Without Index', color='blue')
+        bars2 = ax.bar(x + width/2, with_index_values, width, label='With Index', color='lightgreen')
+
+        # Adding labels, title, and legend
+        ax.set_ylabel('Execution Time (ms)')
+        ax.set_title(f'Execution Time with and without Indexes ({self.num_employees})')
         ax.set_xticks(x)
-        ax.set_xticklabels(query_names, rotation=45)
+        ax.set_xticklabels(labels, rotation=45, ha='right')
         ax.legend()
-        
+
+        # Display the plot
         plt.tight_layout()
         plt.show()
 
-
+        
         
     def purge_tables(self):
         with self.engine.connect() as connection:
             connection.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+
