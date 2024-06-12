@@ -14,15 +14,15 @@ if __name__ == "__main__":
     
     purge_command = 'docker exec -it postgres psql -U postgres -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
     for emploeey_number in EMPLOYEES_NUMBER_LIST:
-        # JoinMethodTest(db_url, emploeey_number, NUM_OF_DEPARTMENTS).execute()
-        # subprocess.run(purge_command, shell=True)
+        JoinMethodTest(db_url, emploeey_number, NUM_OF_DEPARTMENTS).execute()
+        subprocess.run(purge_command, shell=True)
         
         JoinIndexTest(db_url, emploeey_number, NUM_OF_DEPARTMENTS).execute()
         subprocess.run(purge_command, shell=True)
         
-        # JoinLikeTest(db_url, emploeey_number, NUM_OF_DEPARTMENTS).execute()
-        # subprocess.run(purge_command, shell=True)
+        JoinLikeTest(db_url, emploeey_number, NUM_OF_DEPARTMENTS).execute()
+        subprocess.run(purge_command, shell=True)
         
-        # JoinBetweenTest(db_url, emploeey_number, NUM_OF_DEPARTMENTS).execute()
-        # subprocess.run(purge_command, shell=True)
+        JoinBetweenTest(db_url, emploeey_number, NUM_OF_DEPARTMENTS).execute()
+        subprocess.run(purge_command, shell=True)
         
